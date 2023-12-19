@@ -19,6 +19,7 @@
         <quarkus.platform.version>3.6.3</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.1.2</surefire-plugin.version>
+        <vertx.version>4.4.6</vertx.version>
     </properties>
 
     <dependencyManagement>
@@ -83,6 +84,12 @@
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-hazelcast</artifactId>
+            <version>${vertx.version}</version>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 

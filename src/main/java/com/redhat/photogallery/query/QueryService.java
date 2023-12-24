@@ -8,7 +8,8 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.mutiny.core.eventbus.Message;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
-import jakarta.transaction.Transactional;
+import jakarta.transaction.SystemException;
+import jakarta.transaction.UserTransaction;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -27,39 +28,69 @@ public class QueryService {
 
     private static final Logger LOG = LoggerFactory.getLogger(QueryService.class);
 
+    private final UserTransaction userTransaction;
     private final EntityManager entityManager;
+    private final PersistenceRaceConditionRetryStrategy persistenceRaceConditionRetryStrategy;
 
-    public QueryService(final EntityManager entityManager) {
+    public QueryService(final UserTransaction userTransaction,
+                        final EntityManager entityManager,
+                        final PersistenceRaceConditionRetryStrategy persistenceRaceConditionRetryStrategy) {
+        this.userTransaction = Objects.requireNonNull(userTransaction);
         this.entityManager = Objects.requireNonNull(entityManager);
+        this.persistenceRaceConditionRetryStrategy = Objects.requireNonNull(persistenceRaceConditionRetryStrategy);
     }
 
     @ConsumeEvent(value = Constants.PHOTOS_TOPIC_NAME, blocking = true, ordered = true)
-    @Transactional
     public void onNextPhotoCreated(final Message<JsonObject> photoObject) {
-        final PhotoCreatedMessage message = photoObject.body().mapTo(PhotoCreatedMessage.class);
-        QueryItem savedItem = entityManager.find(QueryItem.class, message.getId());
-        if (savedItem == null) {
-            savedItem = new QueryItem();
-            savedItem.id = message.getId();
-            savedItem.persist();
-        }
-        savedItem.name = message.getName();
-        savedItem.category = message.getCategory();
-        LOG.info("Updated in data store {}", savedItem);
+        persistenceRaceConditionRetryStrategy.execute(() -> {
+            try {
+                userTransaction.begin();
+                final PhotoCreatedMessage message = photoObject.body().mapTo(PhotoCreatedMessage.class);
+                QueryItem savedItem = entityManager.find(QueryItem.class, message.getId());
+                if (savedItem == null) {
+                    savedItem = new QueryItem();
+                    savedItem.id = message.getId();
+                    savedItem.persist();
+                }
+                savedItem.name = message.getName();
+                savedItem.category = message.getCategory();
+                LOG.info("Updated in data store {}", savedItem);
+                userTransaction.commit();
+            } catch (final Exception exception) {
+                try {
+                    userTransaction.rollback();
+                } catch (final SystemException systemException) {
+                    throw new FailedToPersistException(systemException);
+                }
+                throw new FailedToPersistException(exception);
+            }
+        });
     }
 
     @ConsumeEvent(value = Constants.LIKES_TOPIC_NAME, blocking = true, ordered = true)
-    @Transactional
     public void onNextLikesAdded(final Message<JsonObject> likesObject) {
-        final LikesAddedMessage message = likesObject.body().mapTo(LikesAddedMessage.class);
-        QueryItem savedItem = entityManager.find(QueryItem.class, message.getId());
-        if (savedItem == null) {
-            savedItem = new QueryItem();
-            savedItem.id = message.getId();
-            savedItem.persist();
-        }
-        savedItem.likes = message.getLikes();
-        LOG.info("Updated in data store {}", savedItem);
+        persistenceRaceConditionRetryStrategy.execute(() -> {
+            try {
+                userTransaction.begin();
+                final LikesAddedMessage message = likesObject.body().mapTo(LikesAddedMessage.class);
+                QueryItem savedItem = entityManager.find(QueryItem.class, message.getId());
+                if (savedItem == null) {
+                    savedItem = new QueryItem();
+                    savedItem.id = message.getId();
+                    savedItem.persist();
+                }
+                savedItem.likes = message.getLikes();
+                LOG.info("Updated in data store {}", savedItem);
+                userTransaction.commit();
+            } catch (final Exception exception) {
+                try {
+                    userTransaction.rollback();
+                } catch (final SystemException systemException) {
+                    throw new FailedToPersistException(systemException);
+                }
+                throw new FailedToPersistException(exception);
+            }
+        });
     }
 
     @GET

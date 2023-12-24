@@ -120,7 +120,7 @@ public class QueryServiceTest {
     }
 
     @Test
-    public void shouldReconcilePhotoWithLikes() throws InterruptedException {
+    public void shouldReconcilePhotoWithLikes() {
         // Given
         final MessageProducer<JsonObject> givenPhotosTopic = eventBus.publisher("photos");
         final PhotoCreatedMessage givenPhotoCreated = new PhotoCreatedMessage(1L, "Calinou", "animals");
@@ -129,12 +129,6 @@ public class QueryServiceTest {
 
         // When
         givenPhotosTopic.writeAndForget(JsonObject.mapFrom(givenPhotoCreated));
-        TimeUnit.SECONDS.sleep(1);// Ok this is necessary or the test will fail due to a Race condition :(
-        // If I am not doing this it will 'sometime' fail because both consumers will want to create an QueryItem
-        // I do not know how to fix it if using multiple instances ...
-        // Two-way to fix it:
-        // 1. use only one ConsumeEvent and use the header as a content type
-        // 2. implement a retryer : do not know how to do it yet.
         givenLikedTopic.writeAndForget(JsonObject.mapFrom(givenLikesAddedMessage));
 
         // Then
